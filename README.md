@@ -2,10 +2,10 @@
 
 > **Base project:** PawPal+ from Module 2 (pet care scheduling app built with Streamlit and Python dataclasses)
 
-**Demo walkthrough (Loom):** _[Add your Loom link here after recording]_
+**Demo walkthrough (Loom):** <video controls src="https://i.imgur.com/mWyoJp6.mp4" title="_[Add your Loom link here after recording]_"></video>
 
 ---
-
+https://i.imgur.com/mWyoJp6.mp4
 ## What This Is
 
 PawPal+ is a pet care scheduling assistant that uses AI to help owners plan their day. You put in your pets, add tasks like walks or medications, and it generates a prioritized schedule. On top of that, it has an AI advisor that actually reads your schedule and tells you if something looks wrong — like if your cat has asthma but the inhaler task is ranked low priority.
