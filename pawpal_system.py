@@ -1,7 +1,10 @@
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import time
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -21,6 +24,7 @@ class Task:
     def mark_complete(self) -> None:
         """Mark this task as completed."""
         self.is_completed = True
+        logger.info("Task marked complete: %s (id=%s)", self.name, self.id)
 
     def __str__(self) -> str:
         due = self.due_time.strftime("%I:%M %p") if self.due_time else "No time set"
@@ -62,10 +66,14 @@ class Owner:
     def add_pet(self, pet: Pet) -> None:
         """Add a pet to this owner's roster."""
         self.pets.append(pet)
+        logger.info("Pet added: %s (id=%s)", pet.name, pet.id)
 
     def remove_pet(self, pet_id: str) -> None:
         """Remove a pet by ID from this owner's roster."""
+        before = len(self.pets)
         self.pets = [p for p in self.pets if p.id != pet_id]
+        if len(self.pets) < before:
+            logger.info("Pet removed: id=%s", pet_id)
 
     def get_all_pets(self) -> list[Pet]:
         """Return all pets belonging to this owner."""
@@ -79,14 +87,28 @@ class Scheduler:
         """Initialize with an owner; pets are sourced from owner only."""
         self.owner = owner
         self.tasks: list[Task] = []
+        logger.info("Scheduler initialized for owner: %s", owner.name)
 
     def add_task(self, task: Task) -> None:
-        """Add a task to the scheduler."""
+        """Add a task; raises ValueError on invalid input."""
+        if not task.name or not task.name.strip():
+            logger.warning("Rejected task with empty name (id=%s)", task.id)
+            raise ValueError("Task name cannot be empty.")
+        if not 1 <= task.priority <= 5:
+            logger.warning("Rejected task with invalid priority %d (id=%s)", task.priority, task.id)
+            raise ValueError("Priority must be between 1 and 5.")
+        if task.duration_mins <= 0:
+            logger.warning("Rejected task with invalid duration %d (id=%s)", task.duration_mins, task.id)
+            raise ValueError("Duration must be greater than 0.")
         self.tasks.append(task)
+        logger.info("Task added: %s (id=%s, priority=%d)", task.name, task.id, task.priority)
 
     def remove_task(self, task_id: str) -> None:
         """Remove a task by ID."""
+        before = len(self.tasks)
         self.tasks = [t for t in self.tasks if t.id != task_id]
+        if len(self.tasks) < before:
+            logger.info("Task removed: id=%s", task_id)
 
     def get_tasks_for_pet(self, pet: Pet) -> list[Task]:
         """Return all tasks belonging to a specific pet."""
@@ -96,14 +118,14 @@ class Scheduler:
         """Return tasks for a pet that are not yet completed."""
         return [t for t in self.get_tasks_for_pet(pet) if not t.is_completed]
 
-    # ── Sorting ──────────────────────────────────────────────────────────────
+    # ── Sorting ───────────────────────────────────────────────────────────────
 
     def sort_by_time(self, tasks: Optional[list[Task]] = None) -> list[Task]:
         """Return tasks sorted by due_time ascending; tasks with no time go last."""
         source = tasks if tasks is not None else self.tasks
         return sorted(source, key=lambda t: t.due_time or time(23, 59))
 
-    # ── Filtering ────────────────────────────────────────────────────────────
+    # ── Filtering ─────────────────────────────────────────────────────────────
 
     def filter_tasks(
         self,
@@ -113,9 +135,8 @@ class Scheduler:
         """Filter tasks by pet name and/or completion status.
 
         Args:
-            pet_name: If given, only tasks for the pet with this name.
-            completed: If True return only done tasks; False returns only pending.
-                       None returns all.
+            pet_name:  If given, only tasks for the pet with this name.
+            completed: True = done only, False = pending only, None = all.
         """
         pet_ids: Optional[set[str]] = None
         if pet_name is not None:
@@ -135,10 +156,11 @@ class Scheduler:
     def complete_task(self, task_id: str) -> Optional[Task]:
         """Mark a task complete and, if recurring, queue its next occurrence.
 
-        Returns the newly created next-occurrence Task, or None for one-off tasks.
+        Returns the next-occurrence Task for daily/weekly tasks, or None.
         """
         task = next((t for t in self.tasks if t.id == task_id), None)
         if task is None:
+            logger.warning("complete_task called with unknown id: %s", task_id)
             return None
 
         task.mark_complete()
@@ -152,10 +174,14 @@ class Scheduler:
                 duration_mins=task.duration_mins,
                 frequency=task.frequency,
                 priority=task.priority,
-                due_time=task.due_time,   # same time, next cycle
+                due_time=task.due_time,
                 is_completed=False,
             )
             self.tasks.append(next_task)
+            logger.info(
+                "Recurring task queued: %s (id=%s, frequency=%s)",
+                next_task.name, next_task.id, next_task.frequency,
+            )
             return next_task
 
         return None
@@ -163,10 +189,9 @@ class Scheduler:
     # ── Conflict detection ────────────────────────────────────────────────────
 
     def get_conflicts(self) -> list[str]:
-        """Return a list of human-readable conflict warnings for overlapping tasks.
+        """Return human-readable conflict warnings for overlapping tasks.
 
-        Checks every pair of pending timed tasks. A conflict occurs when task A's
-        end time (due_time + duration) overlaps task B's due_time.
+        Checks consecutive pairs of sorted pending timed tasks.
         """
         timed = sorted(
             [t for t in self.tasks if t.due_time and not t.is_completed],
@@ -186,12 +211,15 @@ class Scheduler:
                 pet_a = next((p.name for p in self.owner.pets if p.id == a.pet_id), "?")
                 pet_b = next((p.name for p in self.owner.pets if p.id == b.pet_id), "?")
                 a_end = time((end_minutes(a) // 60) % 24, end_minutes(a) % 60)
-                warnings.append(
+                msg = (
                     f"CONFLICT: '{a.name}' ({pet_a}) ends at "
                     f"{a_end.strftime('%I:%M %p')} but "
                     f"'{b.name}' ({pet_b}) starts at "
                     f"{b.due_time.strftime('%I:%M %p')}"
                 )
+                warnings.append(msg)
+                logger.warning(msg)
+
         return warnings
 
     def check_conflicts(self) -> bool:
@@ -203,10 +231,12 @@ class Scheduler:
     def generate_daily_plan(self) -> list[Task]:
         """Return today's pending tasks sorted by priority (high first), then due time."""
         pending = [t for t in self.tasks if not t.is_completed]
-        return sorted(
+        plan = sorted(
             pending,
             key=lambda t: (-t.priority, t.due_time or time(23, 59)),
         )
+        logger.info("Daily plan generated: %d tasks", len(plan))
+        return plan
 
     def send_reminder(self, task: Task) -> None:
         """Print a reminder for a task (placeholder for real notification logic)."""
@@ -214,7 +244,9 @@ class Scheduler:
             (p.name for p in self.owner.pets if p.id == task.pet_id), "Unknown pet"
         )
         due = task.due_time.strftime("%I:%M %p") if task.due_time else "soon"
-        print(
+        msg = (
             f"REMINDER [{self.owner.notification_preference.upper()}]: "
             f"'{task.name}' for {pet_name} is due at {due}."
         )
+        print(msg)
+        logger.info(msg)
