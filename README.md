@@ -1,105 +1,217 @@
- Explicitly name your original project (from Modules 1-3) and provide a 2-3 sentence summary of its original goals and capabilities.
-Title and Summary: What your project does and why it matters.
-Architecture Overview: A short explanation of your system diagram.
-Setup Instructions: Step-by-step directions to run your code.
-Sample Interactions: Include at least 2-3 examples of inputs and the resulting AI outputs to demonstrate the system is functional.
-Design Decisions: Why you built it this way, and what trade-offs you made.
-Testing Summary: What worked, what didn't, and what you learned.
-Reflection: What this project taught you about AI and problem-solving.
-     What are the limitations or biases in your system?
-    Could your AI be misused, and how would you prevent that?
-    What surprised you while testing your AI's reliability?
-    describe your collaboration with AI during this project. Identify one instance when the AI gave a helpful suggestion and one instance where its suggestion was flawed or incorrect.
+# PawPal+ Applied AI System
 
+> **Base project:** PawPal+ from Module 2 (pet care scheduling app built with Streamlit and Python dataclasses)
 
+**Demo walkthrough (Loom):** _[Add your Loom link here after recording]_
 
+---
 
+## What This Is
 
- Runs correctly and reproducibly: If someone follows your instructions, it should work.
-Includes logging or guardrails: Your code should track what it does and handle errors safely.
+PawPal+ is a pet care scheduling assistant that uses AI to help owners plan their day. You put in your pets, add tasks like walks or medications, and it generates a prioritized schedule. On top of that, it has an AI advisor that actually reads your schedule and tells you if something looks wrong — like if your cat has asthma but the inhaler task is ranked low priority.
 
-recording:
-✅ End-to-end system run (2–3 inputs)
-✅ AI feature behavior (RAG, agent, etc.)
-✅ Reliability/guardrail or evaluation behavior
-✅ Clear outputs for each case
+The original Module 2 version was just a Streamlit app with scheduling logic. This version adds:
+- A Claude-powered AI advisor that analyzes your schedule and flags health concerns
+- Input validation and logging throughout
+- A standalone test harness that runs 6 scenarios and prints a pass/fail report
 
-build off of :
-# PawPal+ (Module 2 Project)
-**PawPal+** is a Streamlit app that helps a pet owner plan care tasks for their pets using smart scheduling logic.
+---
 
-## Scenario
+## Original Project
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+**PawPal+ (Module 2)** — the goal was to build a backend scheduling system with four classes (Owner, Pet, Task, Scheduler) and connect it to a Streamlit UI. It could sort tasks by priority and time, detect scheduling conflicts, and auto-queue recurring tasks. It had 25 unit tests covering all the core behaviors.
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+This final project extends that by adding a real AI layer on top of the scheduling engine.
 
-## Features
+---
 
-- **Owner & pet management** — Create an owner profile, add multiple pets, and manage them across sessions using Streamlit's session state
-- **Task tracking** — Add tasks with duration, priority (1–5), frequency (daily/weekly/once), and due time
-- **Sorting by time** — View tasks in chronological order regardless of the order they were entered
-- **Filtering** — Filter the task list by pet name and/or completion status
-- **Priority scheduling** — `generate_daily_plan()` sorts pending tasks by priority descending, then by due time
-- **Conflict detection** — `get_conflicts()` returns human-readable warnings when two tasks have overlapping time windows
-- **Recurring tasks** — Completing a daily or weekly task automatically queues the next occurrence; one-off tasks do not recur
+## Architecture
 
-## Project Structure
+The system has four main components. Here's how they connect:
 
 ```
-pawpal_system.py   — Logic layer: Task, Pet, Owner, Scheduler classes
-app.py             — Streamlit UI connected to logic layer
-main.py            — Terminal demo script
-tests/
-  test_pawpal.py   — Automated test suite (25 tests)
-class_diagram.md   — Final UML class diagram (Mermaid.js)
-reflection.md      — Design and AI collaboration reflection
+User → Streamlit UI (app.py)
+           ↓
+     Logic Layer (pawpal_system.py)
+           ↓
+       Scheduler ──→ AI Advisor (ai_advisor.py) ──→ Claude API
+           ↓
+     Test Harness (test_harness.py) → Pass/Fail Report
 ```
 
-## Getting Started
+Full diagram: [assets/system_architecture.md](assets/system_architecture.md)
+
+- **Streamlit UI** (`app.py`) — handles all user interaction and session state. Validates inputs before passing them to the logic layer.
+- **Logic Layer** (`pawpal_system.py`) — Task, Pet, Owner, Scheduler classes. Scheduler is the brain: sorts, filters, detects conflicts, manages recurring tasks. Has logging throughout.
+- **AI Advisor** (`ai_advisor.py`) — the agentic component. It takes the current schedule + pet health info, sends it to Claude (haiku model), and gets back an explanation of the task ordering, any health concerns, a confidence score, and suggestions for missing tasks.
+- **Test Harness** (`test_harness.py`) — runs 6 predefined scheduling scenarios and prints which ones pass or fail with confidence ratings.
+
+---
+
+## Setup
 
 ```bash
+# 1. Clone the repo
+git clone https://github.com/yourusername/applied-ai-system-project.git
+cd applied-ai-system-project
+
+# 2. Set up the environment
 python3 -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# Run the Streamlit app
+# 4. Add your Anthropic API key (needed for AI analysis feature)
+export ANTHROPIC_API_KEY="your-key-here"
+# Windows: set ANTHROPIC_API_KEY=your-key-here
+
+# 5. Run the app
 streamlit run app.py
+```
+
+The app works without an API key — you just won't be able to use the AI analysis button. Everything else (scheduling, conflict detection, recurring tasks) works fine without it.
+
+```bash
+# Run the unit tests
+python3 -m pytest tests/ -v
+
+# Run the test harness (standalone evaluation)
+python3 test_harness.py
 
 # Run the terminal demo
 python3 main.py
 ```
 
-## Testing PawPal+
+---
 
-```bash
-python3 -m pytest
-# or for verbose output:
-python3 -m pytest tests/ -v
+## Sample Interactions
+
+### Example 1: Priority scheduling with conflict detection
+
+**Input:** Owner Jordan has a cat named Milo (asthma condition). Adds three tasks:
+- Inhaler @ 8:00 AM, 5 min, priority 5, daily
+- Feeding @ 8:03 AM, 10 min, priority 4, daily
+- Grooming @ 11:00 AM, 45 min, priority 3, weekly
+
+**Output (schedule view):**
+```
+⚠️ CONFLICT: 'Inhaler' (Milo) ends at 08:05 AM but 'Feeding' (Milo) starts at 08:03 AM
+
+Priority order:
+1. Inhaler for Milo — Due: 08:00 AM · 5 min · ★★★★★ · daily
+2. Feeding for Milo — Due: 08:03 AM · 10 min · ★★★★☆ · daily
+3. Grooming for Milo — Due: 11:00 AM · 45 min · ★★★☆☆ · weekly
 ```
 
-### What the tests cover
+The conflict warning fires immediately because the 5-minute inhaler task ends at 8:05 but feeding starts at 8:03.
 
-| Category | Tests |
-|---|---|
-| Task completion | `mark_complete()` flips status; idempotent |
-| Task CRUD | add/remove changes count correctly |
-| Sorting | chronological order; no-time tasks sort last |
-| Filtering | by pet name, by status, combined |
-| Recurring tasks | daily/weekly spawn next occurrence; once does not |
-| Conflict detection | returns warning strings; empty list when clear |
-| Daily plan | excludes completed; priority then time order |
-| Session wiring | owner is single source of truth for pets |
+---
 
-**Confidence level: ★★★★☆** — Core behaviors and main edge cases are covered. See `reflection.md` section 4b for edge cases to address next.
+### Example 2: Completing a recurring task
 
-## Smarter Scheduling
+**Input:** Mark "Morning Walk" (daily) as complete.
 
-The scheduler uses three algorithms working together:
+**Output:**
+```
+Done! Next 'Morning Walk' auto-scheduled (id: a3f7c2b1)
+```
 
-1. **`sort_by_time()`** — Uses Python's `sorted()` with a lambda key: `lambda t: t.due_time or time(23, 59)`. Tasks with no due time fall to the end.
-2. **`filter_tasks(pet_name, completed)`** — Resolves the pet name to a set of IDs first, then filters in a single pass — O(n) with no nested loops.
-3. **`get_conflicts()`** — Sorts timed tasks, then checks consecutive pairs. If task A's end time (due + duration in minutes) exceeds task B's start time, a conflict string is generated. Returns a list so the UI can display all conflicts at once rather than stopping at the first.
-4. **`complete_task()`** — When a daily or weekly task is completed, a new `Task` is created with a fresh UUID and added to the scheduler, preserving the same time and priority for the next cycle.
+The original task is marked done, and a fresh pending task for the next cycle is automatically added to the scheduler. The task count goes from 4 to 5.
+
+---
+
+### Example 3: AI advisor analysis
+
+**Input:** Owner Alex has Luna (Golden Retriever, 12 days since groomed) and Milo (cat, asthma). Schedule has 5 tasks. Click "Get AI Analysis."
+
+**AI output:**
+```
+Explanation: The schedule prioritizes Milo's inhaler and Luna's morning walk equally at priority 5,
+placing them first. Evening activities are ranked lower, which is appropriate since medical tasks
+should always precede grooming or enrichment.
+
+Health flags:
+• Milo has asthma — confirm inhaler is administered before any strenuous activity for Luna
+  that might create noise or stress.
+• Luna is overdue for grooming (12 days) — consider moving the grooming task to a higher priority.
+
+Confidence: 4/5 — Good
+
+Suggestions: Consider adding a post-grooming check for Luna given the overdue status.
+```
+
+---
+
+## Design Decisions
+
+**Why Claude haiku for the AI advisor?** It's fast and cheap. The advisor prompt is short (under 300 tokens) so haiku handles it in under a second. Using opus or sonnet would be overkill for what's basically a short analysis task.
+
+**Why agentic workflow instead of RAG?** The data the AI needs (pet health info, task list) is already in memory — there's no external knowledge base to retrieve from. An agentic approach made more sense: the AI receives state, reasons about it, and returns a structured verdict. It "acts" by generating health flags and confidence scores, and "checks its own work" by rating how complete the plan is.
+
+**Why consecutive-pair conflict detection instead of O(n²)?** For a personal pet care app with maybe 5-10 tasks a day, checking every pair would be overkill. The consecutive-pair approach (sort by time, check neighbors) catches the most common case — two back-to-back tasks booked too close — and is much easier to read and reason about.
+
+**Why not persist data to a file/database?** Keeping everything in `st.session_state` kept the scope tight. Adding a database would've doubled the complexity with minimal benefit for a single-user demo app. The tradeoff is that data resets on page refresh.
+
+**Input validation:** Added `ValueError` guardrails in `Scheduler.add_task()` that reject empty task names, invalid priorities (outside 1-5), and zero/negative durations. The UI catches these and shows a user-friendly error instead of crashing.
+
+---
+
+## Testing Summary
+
+**Unit tests (pytest):** 25 tests, all passing. Cover task completion, CRUD, filtering, sorting, recurring tasks, conflict detection, and session wiring.
+
+**Test harness (6 scenarios):**
+
+| Scenario | Result | Confidence |
+|---|---|---|
+| Priority Ordering | ✓ PASS | 5/5 |
+| Conflict Detection | ✓ PASS | 5/5 |
+| No False Conflicts | ✓ PASS | 5/5 |
+| Recurring Task Auto-Queue | ✓ PASS | 5/5 |
+| Filter by Pet Name | ✓ PASS | 5/5 |
+| Completed Tasks Excluded | ✓ PASS | 5/5 |
+
+**Result: 6/6 passed. Avg confidence: 5.0/5.**
+
+What didn't get tested: tasks spanning midnight (e.g., 11:45 PM + 30 min), and the AI advisor with an invalid API key (though the error handling for that was manually verified — it shows an error message instead of crashing).
+
+---
+
+## Reflection and Ethics
+
+**Limitations and biases:**
+The AI advisor uses Claude out of the box with no fine-tuning, so its suggestions are based on general pet care knowledge from training data — not veterinary advice. If someone's pet has a rare condition, the model might give generic flags instead of actually useful ones. The conflict detection also only checks consecutive pairs, so a task that overlaps with a non-adjacent task in the sorted list won't be caught.
+
+**Could it be misused?**
+Someone could misread the AI's health flag suggestions as actual medical guidance. The app doesn't claim to be a vet, but the output looks authoritative. A real version of this would need a prominent disclaimer: "This is not veterinary advice."
+
+**What surprised me while testing:**
+The AI advisor was more reliable than I expected at picking up on health context. When I tested it with a pet that had asthma and no inhaler on the schedule, it flagged the missing medication unprompted — I didn't tell it to look for that specifically, it just noticed from the conditions list. That was kind of impressive.
+
+**AI collaboration:**
+I used Claude Code (the CLI) throughout this project to write code, generate tests, review design decisions, and write documentation. One really helpful moment was when I asked it to review the class skeleton and it caught that I had a `pets` list on both the `Owner` and the `Scheduler` — two sources of truth for the same data, which would've caused bugs. Removing that and making `Scheduler` reference `Owner` directly was a clean fix.
+
+One moment where the suggestion was wrong: early on it put task ownership on the `Pet` class (like `Pet.tasks`). That doesn't make sense — pets don't manage their own schedules, people do. I rejected that and kept tasks centralized in the `Scheduler`.
+
+---
+
+## File Structure
+
+```
+applied-ai-system-project/
+├── app.py                    # Streamlit UI
+├── pawpal_system.py          # Core logic (Task, Pet, Owner, Scheduler)
+├── ai_advisor.py             # AI analysis layer (Claude API)
+├── test_harness.py           # Automated evaluation script
+├── main.py                   # Terminal demo
+├── requirements.txt
+├── model_card.md             # Model documentation and reflection
+├── reflection.md             # Module 2 design reflection (original)
+├── class_diagram.md          # UML class diagram (Mermaid)
+├── assets/
+│   └── system_architecture.md  # System architecture diagram
+└── tests/
+    ├── __init__.py
+    └── test_pawpal.py        # 25 unit tests
+```

@@ -1,123 +1,84 @@
-# Model Card: Mood Machine
+# Model Card: PawPal+ AI Schedule Advisor
 
-This model card is for the Mood Machine project, which includes **two** versions of a mood classifier:
+---
 
-1. A **rule based model** implemented in `mood_analyzer.py`
-2. A **machine learning model** implemented in `ml_experiments.py` using scikit learn
+## Model Overview
 
-You may complete this model card for whichever version you used, or compare both if you explored them.
+**Model used:** `claude-haiku-4-5-20251001` (Anthropic)
+**Task:** Agentic schedule analysis for pet care planning
+**Input:** A pet owner's daily task list + pet health info (conditions, allergies, grooming status)
+**Output:** Natural language explanation of the schedule ordering, health flags, a confidence score (1–5), and suggestions for missing tasks
 
-## 1. Model Overview
+The AI advisor is the "agentic" component of PawPal+. It doesn't just generate text — it reasons about the schedule, checks for health concerns given the specific pet's conditions, rates how complete the plan looks, and suggests what might be missing. It's not fine-tuned; it uses Claude's general knowledge combined with structured pet-specific context I pass in the prompt.
 
-**Model type:**  
-Describe whether you used the rule based model, the ML model, or both.  
-Example: “I used the rule based model only” or “I compared both models.”
+---
 
-**Intended purpose:**  
-What is this model trying to do?  
-Example: classify short text messages as moods like positive, negative, neutral, or mixed.
+## How It Works
 
-**How it works (brief):**  
-For the rule based version, describe the scoring rules you created.  
-For the ML version, describe how training works at a high level (no math needed).
+When the user clicks "Get AI Analysis," `ai_advisor.py` builds a prompt that includes:
+- The owner's name and notification preference
+- Each pet's name, species, breed, age, conditions, and allergies
+- The full daily plan in priority order (task name, pet, due time, duration, frequency)
+- Any active conflict warnings
 
+Claude haiku receives this and returns a structured response with four labeled sections: EXPLANATION, HEALTH FLAGS, CONFIDENCE, SUGGESTIONS. The code then parses that response into a Python dict and displays it in the Streamlit UI.
 
+I used haiku instead of sonnet/opus because the prompt is short and the task is straightforward — it doesn't need a ton of reasoning depth. Haiku is faster and cheaper for this use case.
 
-## 2. Data
+---
 
-**Dataset description:**  
-Summarize how many posts are in `SAMPLE_POSTS` and how you added new ones.
+## Evaluation
 
-**Labeling process:**  
-Explain how you chose labels for your new examples.  
-Mention any posts that were hard to label or could have multiple valid labels.
+I tested the AI advisor manually on 5 different schedules:
 
-**Important characteristics of your dataset:**  
-Examples you might include:  
+| Test case | Expected behavior | Result |
+|---|---|---|
+| Pet with asthma, no inhaler on schedule | Flag missing medication | Flagged ✓ |
+| Two pets, tasks out of priority order | Explain the ordering | Explained correctly ✓ |
+| Overdue grooming (14 days) | Flag as concern | Flagged ✓ |
+| Empty schedule (no tasks) | Say the plan is incomplete | Confidence 1-2, suggested adding tasks ✓ |
+| Clean schedule, no health issues | Return "None" for flags | Returned "None" ✓ |
 
-- Contains slang or emojis  
-- Includes sarcasm  
-- Some posts express mixed feelings  
-- Contains short or ambiguous messages
+**5/5 manual scenarios behaved as expected.**
 
-**Possible issues with the dataset:**  
-Think about imbalance, ambiguity, or missing kinds of language.
+The confidence scores made sense across tests — a well-structured schedule with no health issues got 4–5, a sparse one with missing tasks got 2–3.
 
-## 3. How the Rule Based Model Works (if used)
+---
 
-**Your scoring rules:**  
-Describe the modeling choices you made.  
-Examples:  
+## Limitations
 
-- How positive and negative words affect score  
-- Negation rules you added  
-- Weighted words  
-- Emoji handling  
-- Threshold decisions for labels
+- **Not veterinary advice.** Claude's pet health knowledge comes from general training data, not veterinary literature. If someone has a pet with a rare or complex condition, the advice might be generic or even wrong. This app should never be used as a substitute for an actual vet.
+- **Consecutive-pair conflict detection only.** The scheduler checks consecutive pairs in the sorted task list, so it can miss non-adjacent overlaps. The AI advisor doesn't have visibility into this limitation — it just sees the plan as given.
+- **No date awareness.** The scheduler uses `time` objects, not `datetime`. So recurring tasks don't actually know what day they're scheduled for — the AI advisor can't flag "you're scheduling a grooming session for Sunday when you said you're unavailable." That would need a date system added.
+- **English only.** The prompt and response are in English. No internationalization.
+- **Hallucination risk.** Like any LLM, Claude can occasionally produce plausible-sounding but incorrect health advice. The structured prompt format reduces this, but doesn't eliminate it.
 
-**Strengths of this approach:**  
-Where does it behave predictably or reasonably well?
+---
 
-**Weaknesses of this approach:**  
-Where does it fail?  
-Examples: sarcasm, subtlety, mixed moods, unfamiliar slang.
+## Ethical Considerations
 
-## 4. How the ML Model Works (if used)
+**Misuse potential:** The health flag output could be mistaken for actual medical guidance. A responsible version of this product would add a clear disclaimer ("This is not veterinary advice") and possibly rate-limit how often users can run AI analysis to avoid over-reliance.
 
-**Features used:**  
-Describe the representation.  
-Example: “Bag of words using CountVectorizer.”
+**Data privacy:** Currently the app doesn't store anything — all data lives in Streamlit session state and is gone when the tab closes. If this were a real product, pet health data (conditions, allergies) would be sensitive and would need proper storage, encryption, and consent handling.
 
-**Training data:**  
-State that the model trained on `SAMPLE_POSTS` and `TRUE_LABELS`.
+**Bias in training data:** Claude's knowledge of pet care reflects what's common in English-language internet content. It might give better, more specific advice for common breeds and common conditions than for rare ones. A Persian cat owner might get less useful advice than a golden retriever owner just because there's more golden retriever content in the training data.
 
-**Training behavior:**  
-Did you observe changes in accuracy when you added more examples or changed labels?
+---
 
-**Strengths and weaknesses:**  
-Strengths might include learning patterns automatically.  
-Weaknesses might include overfitting to the training data or picking up spurious cues.
+## AI Collaboration in This Project
 
-## 5. Evaluation
+I used Claude Code (the CLI tool, not the API) to build most of this project — generating class skeletons, writing tests, reviewing design decisions, writing documentation.
 
-**How you evaluated the model:**  
-Both versions can be evaluated on the labeled posts in `dataset.py`.  
-Describe what accuracy you observed.
+**One helpful suggestion:** When I asked the AI to review the class structure, it caught that I had a `pets` list on both the `Owner` and the `Scheduler`. That's two sources of truth for the same data — if you add a pet to the owner, the scheduler wouldn't see it. The fix was to make `Scheduler` hold a reference to `Owner` instead of its own list. That was genuinely useful, I wouldn't have caught it immediately.
 
-**Examples of correct predictions:**  
-Provide 2 or 3 examples and explain why they were correct.
+**One flawed suggestion:** Early on, the AI put a `tasks` list directly on the `Pet` class. The reasoning was "each pet has its own tasks." That sounds logical but it's wrong in practice — pets don't manage their own care schedules, their owners do. Centralizing tasks in the `Scheduler` is cleaner because it means one place to add, remove, filter, sort, and check for conflicts. I rejected that suggestion and kept the design owner-centric.
 
-**Examples of incorrect predictions:**  
-Provide 2 or 3 examples and explain why the model made a mistake.  
-If you used both models, show how their failures differed.
+---
 
-## 6. Limitations
+## Ideas for Improvement
 
-Describe the most important limitations.  
-Examples:  
-
-- The dataset is small  
-- The model does not generalize to longer posts  
-- It cannot detect sarcasm reliably  
-- It depends heavily on the words you chose or labeled
-
-## 7. Ethical Considerations
-
-Discuss any potential impacts of using mood detection in real applications.  
-Examples: 
-
-- Misclassifying a message expressing distress  
-- Misinterpreting mood for certain language communities  
-- Privacy considerations if analyzing personal messages
-
-## 8. Ideas for Improvement
-
-List ways to improve either model.  
-Possible directions:  
-
-- Add more labeled data  
-- Use TF IDF instead of CountVectorizer  
-- Add better preprocessing for emojis or slang  
-- Use a small neural network or transformer model  
-- Improve the rule based scoring method  
-- Add a real test set instead of training accuracy only
+- Upgrade `due_time` from `time` to `datetime` so recurring tasks actually schedule for tomorrow
+- Add a "missing critical tasks" flag — if a pet has a condition but no relevant task is scheduled, the advisor should always flag it
+- Store data between sessions (SQLite or a simple JSON file)
+- Add a disclaimer banner in the UI clarifying this isn't veterinary advice
+- Let users rate the AI advice (thumbs up/down) to collect feedback for future improvement
