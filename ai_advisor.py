@@ -15,6 +15,7 @@ import logging
 import os
 
 import anthropic
+from rag_retriever import retrieve_context
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ def analyze_schedule(plan, owner, scheduler) -> dict:
             suggestions  (str)  — anything the AI thinks is missing
             error        (str)  — only set if the API call failed
     """
+    retrieved_docs = retrieve_context(plan, owner, scheduler, top_k=3)
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         logger.warning("ANTHROPIC_API_KEY not set — AI advisor skipped")
@@ -43,6 +46,7 @@ def analyze_schedule(plan, owner, scheduler) -> dict:
             "health_flags": [],
             "confidence": 0,
             "suggestions": "",
+            "retrieved_docs": retrieved_docs,
             "error": "ANTHROPIC_API_KEY environment variable not set.",
         }
 
@@ -77,6 +81,11 @@ def analyze_schedule(plan, owner, scheduler) -> dict:
         else "No scheduling conflicts."
     )
 
+    rag_context = "\n".join(
+        f"- {doc['title']}: {doc['content']}"
+        for doc in retrieved_docs
+    ) if retrieved_docs else "No retrieved guidance available."
+
     prompt = f"""You are a practical pet care advisor. Review this owner's daily pet care schedule and give a quick, honest assessment.
 
 OWNER: {owner.name} (notifications via {owner.notification_preference})
@@ -88,6 +97,9 @@ TODAY'S PLAN ({len(plan)} tasks, sorted by priority then time):
 {chr(10).join(task_lines) if task_lines else "No tasks scheduled."}
 
 {conflict_section}
+
+RETRIEVED GUIDANCE (use this to ground your answer):
+{rag_context}
 
 Respond in this exact format (keep each section brief — 1-3 sentences max):
 
@@ -108,7 +120,9 @@ SUGGESTIONS: [Anything obviously missing or that should be added? Write "None" i
         )
         raw = message.content[0].text.strip()
         logger.info("AI advisor response received (%d chars)", len(raw))
-        return _parse_response(raw)
+        parsed = _parse_response(raw)
+        parsed["retrieved_docs"] = retrieved_docs
+        return parsed
 
     except anthropic.AuthenticationError:
         logger.error("Invalid Anthropic API key")
@@ -117,6 +131,7 @@ SUGGESTIONS: [Anything obviously missing or that should be added? Write "None" i
             "health_flags": [],
             "confidence": 0,
             "suggestions": "",
+            "retrieved_docs": retrieved_docs,
             "error": "Invalid API key. Check your ANTHROPIC_API_KEY.",
         }
     except Exception as exc:
@@ -126,6 +141,7 @@ SUGGESTIONS: [Anything obviously missing or that should be added? Write "None" i
             "health_flags": [],
             "confidence": 0,
             "suggestions": "",
+            "retrieved_docs": retrieved_docs,
             "error": f"AI advisor error: {exc}",
         }
 

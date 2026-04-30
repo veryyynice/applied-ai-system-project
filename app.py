@@ -234,6 +234,15 @@ if st.session_state.scheduler and st.session_state.scheduler.tasks:
                 with st.spinner("Asking AI advisor..."):
                     result = analyze_schedule(plan, owner, scheduler)
 
+                retrieved_docs = result.get("retrieved_docs", [])
+                if retrieved_docs:
+                    with st.expander("RAG context used", expanded=False):
+                        for doc in retrieved_docs:
+                            st.markdown(
+                                f"- **{doc['title']}** (score: {doc['score']})  \n"
+                                f"  {doc['content']}"
+                            )
+
                 if result.get("error"):
                     st.error(result["error"])
                 else:
